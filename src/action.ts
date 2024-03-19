@@ -3,6 +3,7 @@ import * as github from "@actions/github";
 import { exec } from "@actions/exec";
 import * as fs from "fs";
 import { Report, parseReport } from "./schema";
+import { getRelativePath } from "./helpers";
 
 export async function run() {
     try {
@@ -121,10 +122,5 @@ async function commentOnPR(
         body: summary,
     });
 }
-
-const getRelativePath = (fullPath: string, repo: string) => {
-    const endOfRepoNameIndex = fullPath.indexOf(repo) + repo.length;
-    return fullPath.slice(endOfRepoNameIndex + 1);
-};
 
 run();
