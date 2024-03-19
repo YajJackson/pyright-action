@@ -4,10 +4,15 @@ import * as core from "@actions/core";
 import * as httpClient from "@actions/http-client";
 import * as tc from "@actions/tool-cache";
 import SemVer from "semver/classes/semver";
-import { parse } from "shell-quote";
+import { parse, quote } from "shell-quote";
+import { type Diagnostic, isEmptyRange } from "./schema";
 
 import { version as actionVersion } from "../package.json";
-import { type NpmRegistryResponse, parseNpmRegistryResponse, parsePylanceBuildMetadata } from "./schema";
+import {
+    type NpmRegistryResponse,
+    parseNpmRegistryResponse,
+    parsePylanceBuildMetadata,
+} from "./schema";
 
 export function getActionVersion() {
     return actionVersion;
@@ -114,7 +119,10 @@ export async function getArgs(): Promise<Args> {
 
     const typeshedPath = core.getInput("typeshed-path");
     if (typeshedPath) {
-        args.push(useDashedFlags ? "--typeshed-path" : "--typeshedpath", typeshedPath);
+        args.push(
+            useDashedFlags ? "--typeshed-path" : "--typeshedpath",
+            typeshedPath,
+        );
     }
 
     const venvPath = core.getInput("venv-path");
@@ -175,14 +183,21 @@ export async function getArgs(): Promise<Args> {
                 break;
             default:
                 if (isAnnotateAll(value) || isAnnotateNone(value)) {
-                    throw new Error(`invalid value ${JSON.stringify(value)} in comma-separated annotate`);
+                    throw new Error(
+                        `invalid value ${JSON.stringify(
+                            value,
+                        )} in comma-separated annotate`,
+                    );
                 }
-                throw new Error(`invalid value ${JSON.stringify(value)} for annotate`);
+                throw new Error(
+                    `invalid value ${JSON.stringify(value)} for annotate`,
+                );
         }
     }
 
-    const noComments = getBooleanInput("no-comments", false)
-        || args.some((arg) => flagsWithoutCommentingSupport.has(arg));
+    const noComments =
+        getBooleanInput("no-comments", false) ||
+        args.some((arg) => flagsWithoutCommentingSupport.has(arg));
 
     if (noComments) {
         annotate.clear();
@@ -235,7 +250,9 @@ async function getPyrightInfo(): Promise<NpmRegistryResponse> {
     const resp = await client.get(url);
     const body = await resp.readBody();
     if (resp.message.statusCode !== httpClient.HttpCodes.OK) {
-        throw new Error(`Failed to download metadata for pyright ${version} from ${url} -- ${body}`);
+        throw new Error(
+            `Failed to download metadata for pyright ${version} from ${url} -- ${body}`,
+        );
     }
     return parseNpmRegistryResponse(JSON.parse(body));
 }
@@ -248,7 +265,10 @@ async function getPyrightVersion(): Promise<string> {
 
     const pylanceVersion = core.getInput("pylance-version");
     if (pylanceVersion) {
-        if (pylanceVersion !== "latest-release" && pylanceVersion !== "latest-prerelease") {
+        if (
+            pylanceVersion !== "latest-release" &&
+            pylanceVersion !== "latest-prerelease"
+        ) {
             new SemVer(pylanceVersion); // validate version string
         }
 
@@ -258,13 +278,17 @@ async function getPyrightVersion(): Promise<string> {
     return "latest";
 }
 
-async function getPylancePyrightVersion(pylanceVersion: string): Promise<string> {
+async function getPylancePyrightVersion(
+    pylanceVersion: string,
+): Promise<string> {
     const client = new httpClient.HttpClient();
     const url = `https://raw.githubusercontent.com/microsoft/pylance-release/main/releases/${pylanceVersion}.json`;
     const resp = await client.get(url);
     const body = await resp.readBody();
     if (resp.message.statusCode !== httpClient.HttpCodes.OK) {
-        throw new Error(`Failed to download release metadata for Pylance ${pylanceVersion} from ${url} -- ${body}`);
+        throw new Error(
+            `Failed to download release metadata for Pylance ${pylanceVersion} from ${url} -- ${body}`,
+        );
     }
 
     const buildMetadata = parsePylanceBuildMetadata(JSON.parse(body));
@@ -274,3 +298,55 @@ async function getPylancePyrightVersion(pylanceVersion: string): Promise<string>
 
     return pyrightVersion;
 }
+
+export function pluralize(n: number, singular: string, plural: string) {
+    return `${n} ${n === 1 ? singular : plural}`;
+}
+
+// Copied from pyright, with modifications.
+export function diagnosticToString(
+    diag: Diagnostic,
+    forCommand: boolean,
+): string {
+    let message = "";
+
+    if (!forCommand) {
+        if (diag.file) {
+            message += `${diag.file}:`;
+        }
+        if (diag.range && !isEmptyRange(diag.range)) {
+            message += `${diag.range.start.line + 1}:${
+                diag.range.start.character + 1
+            } -`;
+        }
+        message += ` ${diag.severity}: `;
+    }
+
+    message += diag.message;
+
+    if (diag.rule) {
+        message += ` (${diag.rule})`;
+    }
+
+    return message;
+}
+
+export function printInfo(
+    pyrightVersion: string,
+    node: NodeInfo,
+    cwd: string,
+    args: readonly string[],
+) {
+    core.info(
+        `pyright ${pyrightVersion}, node ${
+            node.version
+        }, pyright-action ${getActionVersion()}`,
+    );
+    core.info(`Working directory: ${cwd}`);
+    core.info(`Running: ${node.execPath} ${quote(args)}`);
+}
+
+export const getRelativePath = (fullPath: string, repo: string) => {
+    const endOfRepoNameIndex = fullPath.indexOf(repo) + repo.length;
+    return fullPath.slice(endOfRepoNameIndex + 1);
+};
